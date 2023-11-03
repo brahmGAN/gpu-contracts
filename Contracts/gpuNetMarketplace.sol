@@ -41,6 +41,7 @@ contract GPURentalMarketplace is Ownable {
     struct user {
         string name;
         uint UID;
+        string organization;
         bool isProvider;
         uint gPointsBalance;
         uint refId;
@@ -90,9 +91,8 @@ contract GPURentalMarketplace is Ownable {
     mapping (address => bool) public isRegistered;
     mapping (uint => address) public machineToOwner;
     mapping (uint => uint) public bundleInfo;
+    mapping (string => bool) internal stripeTxProcessed;
    
-
-
     // Events
     // event ProviderRegistered(uint256 providerId, string name);
     event MachineListed(uint256 machineId, string name);
@@ -101,7 +101,11 @@ contract GPURentalMarketplace is Ownable {
     event userRegistered(address indexed user, string userName);
 
 
+
+
     address public serverPublicAddress;
+
+
 
 
     function setKeys(address newSerPub, address _newFundshandler, address _newToken) public onlyOwner  {
@@ -112,12 +116,10 @@ contract GPURentalMarketplace is Ownable {
 
 
     modifier onlyFromServer( ) {
-        require(msg.sender == serverPublicAddress);
+        require(msg.sender == serverPublicAddress, "Unauthorized request");
         _;
     }
    
-
-
     // Check for server signature
     function isAuthorized(bytes32 messageHash, bytes memory sigHash, address toEqual) internal pure returns(bool) {
         bytes32 ethSignedMessageHash = messageHash;
@@ -132,12 +134,6 @@ contract GPURentalMarketplace is Ownable {
     }
 
 
-
-
-
-
-
-
     function isValidUsername(string memory username) private pure returns (bool) {
         bytes memory usernameBytes = bytes(username);
         for (uint i = 0; i < usernameBytes.length; i++) {
@@ -149,10 +145,8 @@ contract GPURentalMarketplace is Ownable {
     }
 
 
-
-
     // Register a new user
-    function registerUser(string memory _name, uint referrerId, bytes memory signature, bytes32 messageHash, address userAddress) public returns(uint) {
+    function registerUser(string memory _name, uint referrerId, string memory _organization, bytes memory signature, bytes32 messageHash, address userAddress) public returns(uint) {
         require(msg.sender == userAddress || msg.sender == serverPublicAddress, "Unauthorized call");
         require(isAuthorized(messageHash, signature, userAddress), "Unauthorized request");
         require(bytes(_name).length > 4, "User name is too small");
@@ -162,17 +156,17 @@ contract GPURentalMarketplace is Ownable {
         require(referrerId >= 100000 && referrerId <= refIDHandler, "Invalid ref code");
         userIdCount++;
         refIDHandler++;
-        users[userAddress] = user(_name, userIdCount, false, gPerRefer, refIDHandler, new uint256[](0) , 0, new address[](0), refCodeToUser[referrerId] );
+        users[userAddress] = user(_name, userIdCount, _organization, false, gPerRefer, refIDHandler, new uint256[](0) , 0, new address[](0), refCodeToUser[referrerId] );
         refCodeToUser[refIDHandler] = userAddress;
         address refereeAdd = refCodeToUser[referrerId];
         users[refereeAdd].gPointsBalance += gPerRefer;
         users[refereeAdd].referredUsers.push(userAddress);
         userNameStatus[_name] = true;
-        isRegistered[msg.sender] = true;
-        UIDtoAddress[userIdCount] = msg.sender;
-        emit userRegistered(msg.sender, _name);
+        isRegistered[userAddress] = true;
+        UIDtoAddress[userIdCount] = userAddress;
+        emit userRegistered(userAddress, _name);
         emit gPointsUpdate(refereeAdd, gPerRefer, gPointsOrderType.ReferRewards);
-        emit gPointsUpdate(msg.sender, gPerRefer, gPointsOrderType.ReferRewards);
+        emit gPointsUpdate(userAddress, gPerRefer, gPointsOrderType.ReferRewards);
         return userIdCount;
     }
 
@@ -195,6 +189,8 @@ contract GPURentalMarketplace is Ownable {
         return machineId;
 
 
+
+
     }
 
 
@@ -205,8 +201,6 @@ contract GPURentalMarketplace is Ownable {
         require(!machines[_machineId].isRented, "Machine already in use");
         require(_rentalDuration > 0, "Rental duration should be greater than 0");
         require(users[UIDtoAddress[_userId]].gPointsBalance >= machines[_machineId].bidPrice * _rentalDuration, "Not enough Gpoints");
-
-
         orderId++;
         uint amountToDeduct = machines[_machineId].bidPrice * _rentalDuration;
         users[UIDtoAddress[_userId]].gPointsBalance -=  amountToDeduct;
@@ -280,6 +274,15 @@ contract GPURentalMarketplace is Ownable {
     }
 
 
+    function gPBuyWithStripe(string memory txId, uint gPToCredit, uint userId) public onlyFromServer {
+        require(isRegistered[UIDtoAddress[userId]], "Invalid user");
+        require(!stripeTxProcessed[txId], "Order already processed");
+        users[UIDtoAddress[userId]].gPointsBalance += gPToCredit;
+        stripeTxProcessed[txId] = true;
+        emit gPointsUpdate(UIDtoAddress[userId], gPToCredit, gPointsOrderType.Buy);
+    }
+
+
     function  setBidPrice(uint _machineId, uint _bidAmount) public {
         require(msg.sender == machineToOwner[_machineId] || msg.sender == serverPublicAddress);
         machines[_machineId].bidPrice = _bidAmount;
@@ -292,26 +295,23 @@ contract GPURentalMarketplace is Ownable {
     }
 
 
+
+
     function isUserProvider(address toFetch) public view returns (bool) {
         return users[toFetch].isProvider;
     }
-
 
     function machinesOwned(address toFetch) public view returns(uint[] memory) {
         return users[toFetch].providedGpus;
     }
 
-
     function checkAvailability(uint idToFetch) public view returns (bool) {
         return machines[idToFetch].isAvailable;
     }
 
-
     function isReferCodeValid (uint codeToCheck) public view returns (bool) {
         return codeToCheck > 100000 && codeToCheck <= refIDHandler;
     }
-
-
 }
 
 
