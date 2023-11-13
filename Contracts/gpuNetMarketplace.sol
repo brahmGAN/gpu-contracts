@@ -3,7 +3,6 @@ pragma solidity ^0.8.9;
 
 
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 
 // Interface for ERC20 (like USDC)
@@ -16,7 +15,6 @@ interface IERC20 {
 
 
 contract GPURentalMarketplace is Ownable {
-    using ECDSA for bytes32;
    
     // Struct for GPU details
     struct GPU {
@@ -91,7 +89,8 @@ contract GPURentalMarketplace is Ownable {
     mapping (address => bool) public isRegistered;
     mapping (uint => address) public machineToOwner;
     mapping (uint => uint) public bundleInfo;
-    mapping (string => bool) internal stripeTxProcessed;
+    mapping (string => bool) public stripeTxProcessed;
+    mapping (address => bool) public hasTweeted;
    
     // Events
     // event ProviderRegistered(uint256 providerId, string name);
@@ -119,13 +118,6 @@ contract GPURentalMarketplace is Ownable {
         require(msg.sender == serverPublicAddress, "Unauthorized request");
         _;
     }
-   
-    // Check for server signature
-    function isAuthorized(bytes32 messageHash, bytes memory sigHash, address toEqual) internal pure returns(bool) {
-        bytes32 ethSignedMessageHash = messageHash;
-        address resolvedAddress = ethSignedMessageHash.recover(sigHash);
-        return resolvedAddress == toEqual;
-    }
 
 
     function isValidUsernameCharacter(bytes1 char) private pure returns (bool) {
@@ -146,9 +138,8 @@ contract GPURentalMarketplace is Ownable {
 
 
     // Register a new user
-    function registerUser(string memory _name, uint referrerId, string memory _organization, bytes memory signature, bytes32 messageHash, address userAddress) public returns(uint) {
+    function registerUser(string memory _name, uint referrerId, string memory _organization, address userAddress) public returns(uint) {
         require(msg.sender == userAddress || msg.sender == serverPublicAddress, "Unauthorized call");
-        require(isAuthorized(messageHash, signature, userAddress), "Unauthorized request");
         require(bytes(_name).length > 4, "User name is too small");
         require(isValidUsername(_name), "Not a valid format");
         require(!isRegistered[userAddress], "Already Registered");
@@ -171,6 +162,16 @@ contract GPURentalMarketplace is Ownable {
     }
 
 
+    function updateProfile(string memory _name, string memory _organization) public {
+        require(isRegistered[msg.sender]);
+        require(!userNameStatus[_name]);
+        require(isValidUsername(_name));
+        require(bytes(_name).length>4);
+        users[msg.sender].name = _name;
+        users[msg.sender].organization = _organization;
+    }
+
+
     // Register a new machine/GPU
     function registerMachines(string memory _cpuname, string memory _gpuname, uint _spuVRam, uint _totalRam, uint256 _memorySize, uint256 _coreCount, string memory _ipAddr, uint[] memory _openedPorts, string memory _region, uint _bidprice, address provider) public onlyFromServer returns(uint) {
         require(bytes(_gpuname).length > 3, "Machine name is required");
@@ -178,8 +179,8 @@ contract GPURentalMarketplace is Ownable {
         require(_coreCount > 0, "Core count should be greater than 0");
         require(isRegistered[provider], "Not a user");
        
-        if (!users[msg.sender].isProvider) {
-            users[msg.sender].isProvider = true;
+        if (!users[provider].isProvider) {
+            users[provider].isProvider = true;
         }
         machineId++;
         machines[machineId] = GPU(_cpuname, _gpuname , _spuVRam, _totalRam,  _memorySize,  _coreCount, _ipAddr, _openedPorts, _region, _bidprice, true, true,false);
@@ -187,10 +188,6 @@ contract GPURentalMarketplace is Ownable {
         machineToOwner[machineId] = provider;
         emit MachineListed(machineId, _gpuname);
         return machineId;
-
-
-
-
     }
 
 
@@ -204,7 +201,7 @@ contract GPURentalMarketplace is Ownable {
         orderId++;
         uint amountToDeduct = machines[_machineId].bidPrice * _rentalDuration;
         users[UIDtoAddress[_userId]].gPointsBalance -=  amountToDeduct;
-        orders[orderId] = Order(msg.sender, _machineId, block.timestamp, _rentalDuration, amountToDeduct, true);
+        orders[orderId] = Order(UIDtoAddress[_userId], _machineId, block.timestamp, _rentalDuration, amountToDeduct, true);
        
         machines[_machineId].isAvailable = false; // Set the machine as rented
         machines[_machineId].isListed = false;
@@ -289,6 +286,15 @@ contract GPURentalMarketplace is Ownable {
     }
 
 
+    function verifyTweet(address tweetedUser) public onlyFromServer {
+        require(isRegistered[tweetedUser], "Invalid user");
+        require(!hasTweeted[tweetedUser], "Already verified");
+        users[tweetedUser].gPointsBalance += 5;
+        hasTweeted[tweetedUser] = true;
+        emit gPointsUpdate(tweetedUser, 5, gPointsOrderType.Earn);
+    }
+
+
     //viewfunctions
     function getUserGPoints(address toFetch) public view returns(uint) {
         return users[toFetch].gPointsBalance;
@@ -301,17 +307,20 @@ contract GPURentalMarketplace is Ownable {
         return users[toFetch].isProvider;
     }
 
+
     function machinesOwned(address toFetch) public view returns(uint[] memory) {
         return users[toFetch].providedGpus;
     }
+
+
+
 
     function checkAvailability(uint idToFetch) public view returns (bool) {
         return machines[idToFetch].isAvailable;
     }
 
+
     function isReferCodeValid (uint codeToCheck) public view returns (bool) {
         return codeToCheck > 100000 && codeToCheck <= refIDHandler;
     }
 }
-
-
