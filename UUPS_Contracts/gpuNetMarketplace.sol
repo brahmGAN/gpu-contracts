@@ -147,6 +147,9 @@ contract GPURentalMarketplace is Proxiable {
         return true;
     }
 
+    function updateCode(address newCode) onlyOwner public {
+        updateCodeAddress(newCode);
+    }
 
     // Register a new user
     function registerUser(string memory _name, uint referrerId, string memory _organization, address userAddress) public returns(uint) {
