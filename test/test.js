@@ -1,6 +1,9 @@
 const { expect } = require("chai")
 const { ethers } = require("hardhat")
 
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 describe('GPURentalMarketplace', () => {
 
@@ -36,14 +39,26 @@ describe('GPURentalMarketplace', () => {
 
             const {ProxyV1,owner} = await mainDeploy()
 
+            // console.log(`Main contract and Proxy Deployed`)
+            // await sleep(5*1000)
+
             const GPURentalMarketplaceV2 = await hre.ethers.deployContract("GPURentalMarketplaceV2")
             await GPURentalMarketplaceV2.waitForDeployment()
+
+            // console.log(`V2 contract Deployed`)
 
             const upgrade = ProxyV1.updateCode(GPURentalMarketplaceV2.target)
             const ProxyV2 = await GPURentalMarketplaceV2.attach(ProxyV1.target);
 
+            // console.log(`Proxy contract updated!`)
+            // await sleep(5*1000)
+
             // Check new added function
             const increase = await ProxyV2.increase()
+
+            // console.log(`New function used!`)
+            // await sleep(5*1000)
+            
             const machineId = await ProxyV2.machineId()
 
             expect(machineId).to.equal(10001)
@@ -51,7 +66,5 @@ describe('GPURentalMarketplace', () => {
         })
 
      })
-
-    mainDeploy()
 
 })
