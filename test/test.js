@@ -9,7 +9,7 @@ describe('GPURentalMarketplace', () => {
 
     async function mainDeploy(){
 
-        const [owner] = await ethers.getSigners();
+        const [owner,otherAccount] = await ethers.getSigners();
 
         const GPURentalMarketplace = await hre.ethers.deployContract("GPURentalMarketplace")
         await GPURentalMarketplace.waitForDeployment()
@@ -19,7 +19,7 @@ describe('GPURentalMarketplace', () => {
 
         const ProxyV1 = await GPURentalMarketplace.attach(Proxy.target);
 
-        return {ProxyV1,owner}
+        return {ProxyV1,owner,otherAccount}
 
     }
 
@@ -68,20 +68,92 @@ describe('GPURentalMarketplace', () => {
 
     describe('Functions Testing', () => {
 
-        it("Register User Working", async() => {
+        it("Register User Check", async() => {
 
-            const {ProxyV1,owner} = await mainDeploy()
+            const {ProxyV1,owner,otherAccount} = await mainDeploy()
 
-            const userId = await ProxyV1.registerUser(
-                "0xanon",
-                100000,
-                "test",
-                owner.address
+            // Unauthorized call check
+            await expect(
+                ProxyV1.registerUser(
+                    "0xanon", 
+                    100000, 
+                    "test", 
+                    otherAccount.address
+                )
             )
+            .to.be.revertedWith("Unauthorized call");
+
+            // Event Testing 
+            await expect(
+                ProxyV1.registerUser(
+                    "0xanon", 
+                    100000, 
+                    "test", 
+                    owner.address
+                )
+            )
+            .to.emit(ProxyV1, "userRegistered")
+            .withArgs(owner.address, "0xanon");
 
             const userInfo = await ProxyV1.users(owner.address)
 
             expect(userInfo[0]).to.equal("0xanon")
+
+        })
+
+
+        it("Register Machine Check", async() => {
+
+            const {ProxyV1,owner,otherAccount} = await mainDeploy()
+
+            await ProxyV1.registerUser("0xanon", 100000, "test", owner.address)
+
+            // Unauthorized call 
+            await expect(
+                ProxyV1.registerMachines(
+                    "AMD EPYC 7R32", 
+                    "NVIDIA A10G",
+                    22,
+                    8,
+                    512,
+                    8,
+                    "3.235.148.209",
+                    [22,80],
+                    "Asia",
+                    800,
+                    owner.address
+                )
+            )
+            .to.be.revertedWith("Unauthorized request");
+
+            // Keys Setup
+            await ProxyV1.setKeys(
+                owner.address,
+                "0xcE408f35c3D43F5609151310309De73f3e57Ec76",
+                "0x6e54ebe8067bE3dc516D8a14bb40f4224b83FB46"
+            )
+
+            // Event Testing 
+            await expect(
+                ProxyV1.registerMachines(
+                    "AMD EPYC 7R32", 
+                    "NVIDIA A10G",
+                    22,
+                    10,
+                    512,
+                    8,
+                    "3.235.148.209",
+                    [22,80],
+                    "Asia",
+                    8,
+                    owner.address
+                )
+            )
+            .to.emit(ProxyV1, "MachineListed")
+            .withArgs(10001, "NVIDIA A10G");
+
+            const machineInfo = await ProxyV1.machines(10001)
+            expect(machineInfo[0]).to.equal("AMD EPYC 7R32")
 
         })
 
