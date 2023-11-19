@@ -23,7 +23,7 @@ describe('GPURentalMarketplace', () => {
 
     }
 
-    describe('Deployement', () => { 
+    describe('Deployement Testing', () => { 
 
         // Properly deployed
         it("Is properly deployed", async() => {
@@ -60,11 +60,31 @@ describe('GPURentalMarketplace', () => {
             // await sleep(5*1000)
             
             const machineId = await ProxyV2.machineId()
-
             expect(machineId).to.equal(10001)
 
         })
 
-     })
+    })
+
+    describe('Functions Testing', () => {
+
+        it("Register User Working", async() => {
+
+            const {ProxyV1,owner} = await mainDeploy()
+
+            const userId = await ProxyV1.registerUser(
+                "0xanon",
+                100000,
+                "test",
+                owner.address
+            )
+
+            const userInfo = await ProxyV1.users(owner.address)
+
+            expect(userInfo[0]).to.equal("0xanon")
+
+        })
+
+    })
 
 })
