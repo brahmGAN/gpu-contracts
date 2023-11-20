@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.1;
+pragma solidity ^0.8.9;
 
-
-import "@openzeppelin/contracts/access/Ownable.sol";
-
+import "./Proxiable.sol";
 
 // Interface for ERC20 (like USDC)
 interface IERC20 {
@@ -14,7 +12,7 @@ interface IERC20 {
 }
 
 
-contract GPURentalMarketplaceNormal is Ownable(msg.sender) {
+contract GPURentalMarketplace is Proxiable {
    
     // Struct for GPU details
     struct GPU {
@@ -70,13 +68,26 @@ contract GPURentalMarketplaceNormal is Ownable(msg.sender) {
 
 
     // State variables
-    uint public machineId = 10000;
-    uint public userIdCount = 100;
-    uint public orderId = 0;
-    uint internal refIDHandler = 100000;
-    uint gPerRefer = 5;
-    address public USDC_ADDRESS = 0x6e54ebe8067bE3dc516D8a14bb40f4224b83FB46;
-    address public funds_handler = 0xcE408f35c3D43F5609151310309De73f3e57Ec76;
+    uint public machineId;
+    uint public userIdCount;
+    uint public orderId;
+    uint internal refIDHandler;
+    uint gPerRefer;
+    address public USDC_ADDRESS;
+    address public funds_handler;
+
+    function initialize() public {
+        require(!initalized, "Already initalized");
+        owner = msg.sender;
+        initalized = true;
+        machineId = 10000;
+        userIdCount = 100;
+        orderId = 0;
+        refIDHandler = 100000;
+        gPerRefer = 5;
+        USDC_ADDRESS = 0x6e54ebe8067bE3dc516D8a14bb40f4224b83FB46;
+        funds_handler = 0xcE408f35c3D43F5609151310309De73f3e57Ec76;
+    }
 
 
     // Mappings
@@ -99,14 +110,10 @@ contract GPURentalMarketplaceNormal is Ownable(msg.sender) {
     event gPointsUpdate(address indexed user, uint amount, gPointsOrderType orderType );
     event userRegistered(address indexed user, string userName);
 
-
-
-
     address public serverPublicAddress;
-
-
-
-
+    bool public initalized = false;
+    address public owner;
+    
     function setKeys(address newSerPub, address _newFundshandler, address _newToken) public onlyOwner  {
         serverPublicAddress = newSerPub;
         funds_handler = _newFundshandler;
@@ -119,6 +126,10 @@ contract GPURentalMarketplaceNormal is Ownable(msg.sender) {
         _;
     }
 
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Only owner is allowed to perform this action");
+        _;
+    }
 
     function isValidUsernameCharacter(bytes1 char) private pure returns (bool) {
         return (char >= 0x30 && char <= 0x39) || // 0-9
@@ -136,6 +147,9 @@ contract GPURentalMarketplaceNormal is Ownable(msg.sender) {
         return true;
     }
 
+    function updateCode(address newCode) onlyOwner public {
+        updateCodeAddress(newCode);
+    }
 
     // Register a new user
     function registerUser(string memory _name, uint referrerId, string memory _organization, address userAddress) public returns(uint) {
@@ -300,9 +314,6 @@ contract GPURentalMarketplaceNormal is Ownable(msg.sender) {
         return users[toFetch].gPointsBalance;
     }
 
-
-
-
     function isUserProvider(address toFetch) public view returns (bool) {
         return users[toFetch].isProvider;
     }
@@ -311,8 +322,6 @@ contract GPURentalMarketplaceNormal is Ownable(msg.sender) {
     function machinesOwned(address toFetch) public view returns(uint[] memory) {
         return users[toFetch].providedGpus;
     }
-
-
 
 
     function checkAvailability(uint idToFetch) public view returns (bool) {
