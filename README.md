@@ -43,6 +43,7 @@ The GPU Rental Marketplace is a decentralized application built on the Polygon M
 ### Modifiers
 
 - `onlyFromServer`: Ensures that certain functions can only be called by the server.
+- `onlyOwner`: Ensures that certain functions can only be called by the owner.
 
 ### Functions
 
@@ -54,8 +55,7 @@ The contract is intended to be deployed on the Polygon mainnet and interacted wi
 
 ## Security Considerations
 
-The contract includes checks for proper authorization, valid user input, and sufficient balances before performing state-changing operations. It also uses OpenZeppelin's `Ownable` and `ECDSA` libraries for ownership management and signature verification, respectively.
-
+The contract includes checks for proper authorization, valid user input, and sufficient balances before performing state-changing operations.
 ---
 
 This README provides a high-level description of the GPU Rental Marketplace smart contract. For detailed information on deployment, testing, and interaction, please refer to the specific documentation sections at https://docs.gpu.net or contact the development team.
