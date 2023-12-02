@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.1;
+pragma solidity ^0.8.9;
 
 import "./Proxiable.sol";
 
@@ -75,11 +75,13 @@ contract GPURentalMarketplace is Proxiable {
     uint gPerRefer;
     address public USDC_ADDRESS;
     address public funds_handler;
+    bool public isPaused;
 
     function initialize() public {
         require(!initalized, "Already initalized");
         owner = msg.sender;
         initalized = true;
+        isPaused = false;
         machineId = 10000;
         userIdCount = 100;
         orderId = 0;
@@ -131,6 +133,15 @@ contract GPURentalMarketplace is Proxiable {
         _;
     }
 
+    modifier isContractPaused() {
+        require(isPaused == false, "Contract is paused");
+        _;
+    }
+
+    function changeIsPaused() onlyOwner public {
+        isPaused = !isPaused;
+    }
+
     function isValidUsernameCharacter(bytes1 char) private pure returns (bool) {
         return (char >= 0x30 && char <= 0x39) || // 0-9
             (char >= 0x61 && char <= 0x7A);   // a-z
@@ -147,12 +158,12 @@ contract GPURentalMarketplace is Proxiable {
         return true;
     }
 
-    function updateCode(address newCode) onlyOwner public {
+    function updateCode(address newCode) onlyOwner isContractPaused public {
         updateCodeAddress(newCode);
     }
 
     // Register a new user
-    function registerUser(string memory _name, uint referrerId, string memory _organization, address userAddress) public returns(uint) {
+    function registerUser(string memory _name, uint referrerId, string memory _organization, address userAddress) isContractPaused public returns(uint) {
         require(msg.sender == userAddress || msg.sender == serverPublicAddress, "Unauthorized call");
         require(bytes(_name).length > 4, "User name is too small");
         require(isValidUsername(_name), "Not a valid format");
@@ -175,8 +186,7 @@ contract GPURentalMarketplace is Proxiable {
         return userIdCount;
     }
 
-
-    function updateProfile(string memory _name, string memory _organization) public {
+    function updateProfile(string memory _name, string memory _organization) isContractPaused public {
         require(isRegistered[msg.sender]);
         require(!userNameStatus[_name]);
         require(isValidUsername(_name));
@@ -185,9 +195,8 @@ contract GPURentalMarketplace is Proxiable {
         users[msg.sender].organization = _organization;
     }
 
-
     // Register a new machine/GPU
-    function registerMachines(string memory _cpuname, string memory _gpuname, uint _spuVRam, uint _totalRam, uint256 _memorySize, uint256 _coreCount, string memory _ipAddr, uint[] memory _openedPorts, string memory _region, uint _bidprice, address provider) public onlyFromServer returns(uint) {
+    function registerMachines(string memory _cpuname, string memory _gpuname, uint _spuVRam, uint _totalRam, uint256 _memorySize, uint256 _coreCount, string memory _ipAddr, uint[] memory _openedPorts, string memory _region, uint _bidprice, address provider) public onlyFromServer isContractPaused returns(uint) {
         require(bytes(_gpuname).length > 3, "Machine name is required");
         require(_memorySize > 0, "Memory size should be greater than 0");
         require(_coreCount > 0, "Core count should be greater than 0");
@@ -204,9 +213,8 @@ contract GPURentalMarketplace is Proxiable {
         return machineId;
     }
 
-
     // Rent a machine/GPU
-    function rentMachine(uint256 _machineId, uint256 _rentalDuration, uint256 _userId) public onlyFromServer returns(uint) {
+    function rentMachine(uint256 _machineId, uint256 _rentalDuration, uint256 _userId) public onlyFromServer isContractPaused returns(uint) {
         require(isRegistered[UIDtoAddress[_userId]], "Renter is not registered yet");
         require(machines[_machineId].isAvailable && machines[_machineId].isListed, "Machine is not available for rent");
         require(!machines[_machineId].isRented, "Machine already in use");
@@ -224,8 +232,7 @@ contract GPURentalMarketplace is Proxiable {
         return orderId;
     }
 
-
-    function completeOrder(uint _orderId) public onlyFromServer {
+    function completeOrder(uint _orderId) public isContractPaused onlyFromServer {
         require(machines[orders[_orderId].machineId].isRented, "Machine is not rented");
         uint rentalDurationInSeconds = orders[_orderId].rentalDuration * 3600;
         require(block.timestamp >= (orders[_orderId].orderTimestamp + rentalDurationInSeconds));
@@ -239,8 +246,7 @@ contract GPURentalMarketplace is Proxiable {
         emit gPointsUpdate(orders[_orderId].renter, orders[_orderId].amountToHold , gPointsOrderType.Spend);
     }
 
-
-    function cancelOrder(uint _orderId) public onlyFromServer {
+    function cancelOrder(uint _orderId) public onlyFromServer isContractPaused {
         require(machines[orders[_orderId].machineId].isRented, "Machine is not rented");
         uint rentalDurationInSeconds = orders[_orderId].rentalDuration * 3600;
         require( (orders[_orderId].orderTimestamp + rentalDurationInSeconds) > block.timestamp);
@@ -252,8 +258,7 @@ contract GPURentalMarketplace is Proxiable {
         machines[orders[_orderId].machineId].isRented = false;
     }
 
-
-    function listMachineToggle(uint _machineId) public  {
+    function listMachineToggle(uint _machineId) isContractPaused public  {
         require(machineToOwner[_machineId] == msg.sender || msg.sender == serverPublicAddress, "Not authorized");
         require(_machineId > 10000 && _machineId <= machineId);
         require(!machines[_machineId].isRented, "Machine already in use");
@@ -261,18 +266,15 @@ contract GPURentalMarketplace is Proxiable {
         machines[_machineId].isAvailable = !machines[_machineId].isAvailable;
     }
 
-
-    function setReferRewards (uint newAmount) public onlyOwner {
+    function setReferRewards (uint newAmount) public isContractPaused onlyOwner {
         gPerRefer = newAmount;
     }
 
-
-    function setBundleInfo(uint _amount, uint _gPoints) public onlyOwner {
+    function setBundleInfo(uint _amount, uint _gPoints) public isContractPaused onlyOwner {
         bundleInfo[_amount] = _gPoints;
     }
 
-
-    function gPBuy(uint amount) public {
+    function gPBuy(uint amount) isContractPaused public {
         require(bundleInfo[amount] != 0, "Select an existing bundle");
         require(isRegistered[msg.sender], "User not eligible to buy gPoints");
         uint decimal = IERC20(USDC_ADDRESS).decimals();
@@ -284,8 +286,7 @@ contract GPURentalMarketplace is Proxiable {
         emit  gPointsUpdate( msg.sender , bundleInfo[amount], gPointsOrderType.Buy);
     }
 
-
-    function gPBuyWithStripe(string memory txId, uint gPToCredit, uint userId) public onlyFromServer {
+    function gPBuyWithStripe(string memory txId, uint gPToCredit, uint userId) public isContractPaused onlyFromServer {
         require(isRegistered[UIDtoAddress[userId]], "Invalid user");
         require(!stripeTxProcessed[txId], "Order already processed");
         users[UIDtoAddress[userId]].gPointsBalance += gPToCredit;
@@ -293,14 +294,12 @@ contract GPURentalMarketplace is Proxiable {
         emit gPointsUpdate(UIDtoAddress[userId], gPToCredit, gPointsOrderType.Buy);
     }
 
-
-    function  setBidPrice(uint _machineId, uint _bidAmount) public {
+    function  setBidPrice(uint _machineId, uint _bidAmount) isContractPaused public {
         require(msg.sender == machineToOwner[_machineId] || msg.sender == serverPublicAddress);
         machines[_machineId].bidPrice = _bidAmount;
     }
 
-
-    function verifyTweet(address tweetedUser) public onlyFromServer {
+    function verifyTweet(address tweetedUser) public isContractPaused onlyFromServer {
         require(isRegistered[tweetedUser], "Invalid user");
         require(!hasTweeted[tweetedUser], "Already verified");
         users[tweetedUser].gPointsBalance += 5;
