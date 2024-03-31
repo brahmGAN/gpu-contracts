@@ -26,10 +26,8 @@ contract GPURentalMarketplace is Proxiable {
         uint256[] portsOpen;
         string region;
         uint256 bidPrice;  //in Gpoints
-        bool isAvailable;
         bool isListed;
         bool isRented;
-        // GPUStatus status;
     }
 
 
@@ -197,7 +195,7 @@ contract GPURentalMarketplace is Proxiable {
             users[provider].isProvider = true;
         }
         machineId++;
-        machines[machineId] = GPU(_cpuname, _gpuname , _spuVRam, _totalRam,  _memorySize,  _coreCount, _ipAddr, _openedPorts, _region, _bidprice, true, true,false);
+        machines[machineId] = GPU(_cpuname, _gpuname , _spuVRam, _totalRam,  _memorySize,  _coreCount, _ipAddr, _openedPorts, _region, _bidprice, true,false);
         users[provider].providedGpus.push(machineId);
         machineToOwner[machineId] = provider;
         emit MachineListed(machineId, _gpuname);
@@ -208,7 +206,7 @@ contract GPURentalMarketplace is Proxiable {
     // Rent a machine/GPU
     function rentMachine(uint256 _machineId, uint256 _rentalDuration, uint256 _userId) public onlyFromServer returns(uint) {
         require(isRegistered[UIDtoAddress[_userId]], "Renter is not registered yet");
-        require(machines[_machineId].isAvailable && machines[_machineId].isListed, "Machine is not available for rent");
+        require(machines[_machineId].isListed, "Machine is not available for rent");
         require(!machines[_machineId].isRented, "Machine already in use");
         require(_rentalDuration > 0, "Rental duration should be greater than 0");
         require(users[UIDtoAddress[_userId]].gPointsBalance >= machines[_machineId].bidPrice * _rentalDuration, "Not enough Gpoints");
@@ -216,8 +214,6 @@ contract GPURentalMarketplace is Proxiable {
         uint amountToDeduct = machines[_machineId].bidPrice * _rentalDuration;
         users[UIDtoAddress[_userId]].gPointsBalance -=  amountToDeduct;
         orders[orderId] = Order(UIDtoAddress[_userId], _machineId, block.timestamp, _rentalDuration, amountToDeduct, true);
-       
-        machines[_machineId].isAvailable = false; // Set the machine as rented
         machines[_machineId].isListed = false;
         machines[_machineId].isRented =  true;
         emit MachineRented(orderId, _machineId, UIDtoAddress[_userId]);
@@ -232,7 +228,6 @@ contract GPURentalMarketplace is Proxiable {
         require(orders[_orderId].isPending, "Order fulfilled already");
         orders[_orderId].isPending = false;
         users[machineToOwner[orders[_orderId].machineId]].gPointsBalance += orders[_orderId].amountToHold;
-        machines[orders[_orderId].machineId].isAvailable = true;
         machines[orders[_orderId].machineId].isListed = true;
         machines[orders[_orderId].machineId].isRented = false;
         emit gPointsUpdate(machineToOwner[orders[_orderId].machineId], orders[_orderId].amountToHold, gPointsOrderType.Earn);
@@ -247,7 +242,6 @@ contract GPURentalMarketplace is Proxiable {
         require(orders[_orderId].isPending, "Order fulfilled already");
         orders[_orderId].isPending = false;
         users[orders[_orderId].renter].gPointsBalance += orders[_orderId].amountToHold;
-        machines[orders[_orderId].machineId].isAvailable = true;
         machines[orders[_orderId].machineId].isListed = true;
         machines[orders[_orderId].machineId].isRented = false;
     }
@@ -258,7 +252,6 @@ contract GPURentalMarketplace is Proxiable {
         require(_machineId > 10000 && _machineId <= machineId);
         require(!machines[_machineId].isRented, "Machine already in use");
         machines[_machineId].isListed = !machines[_machineId].isListed;
-        machines[_machineId].isAvailable = !machines[_machineId].isAvailable;
     }
 
 
@@ -325,7 +318,7 @@ contract GPURentalMarketplace is Proxiable {
 
 
     function checkAvailability(uint idToFetch) public view returns (bool) {
-        return machines[idToFetch].isAvailable;
+        return machines[idToFetch].isListed;
     }
 
 
