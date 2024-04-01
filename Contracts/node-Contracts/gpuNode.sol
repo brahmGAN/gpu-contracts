@@ -24,6 +24,7 @@ contract GANNode is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
     {}
 
     mapping(uint => uint) public tierLeftover;
+    mapping (uint => uint) public tierMaxSupply;
     mapping(address => mapping(uint=> uint)) public userTierLeftover;
 
     // mapping(address => bool) public isWhitelisted;
@@ -101,6 +102,7 @@ contract GANNode is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
         require(tier >0 && tier <= 15 && priceTier >= 75000);
         require(maxTokenId ==0, "Minting already started");
         tierLeftover[tier] = totalAllocated;
+        tierMaxSupply[tier] = totalAllocated;
         tierToPrice[tier] = priceTier;
     }
 
@@ -188,7 +190,14 @@ contract GANNode is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
     function maxMintable(address userToCheck) public view returns(uint) {
         uint maxMint;
         if (!isInitialized[userToCheck]) {
-            maxMint = 115;
+            for(uint i = 1; i<= 15; i++) {
+                if(tierLeftover[i]>=i) {
+                    maxMint += i;
+                }
+                else {
+                    maxMint += tierLeftover[i];
+                }
+            }
         }
         else {
             for(uint i = 1; i<= 15; i++) {
@@ -237,3 +246,4 @@ contract GANNode is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
         return super.supportsInterface(interfaceId);
     }
 }
+
