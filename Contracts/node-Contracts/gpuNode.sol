@@ -9,22 +9,20 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 /// @custom:security-contact info@brahmgan.com
 contract GANNode is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
     
-
     uint public maxTokenId;
     uint public constant MAX_SUPPLY = 15000; //Change it to set the value using a new function
     string public URI; //Will change to the ipfs hash
-    address public serverPublicAddress;
     mapping (address => uint) public userMinted;
 
     constructor(address initialOwner)
         ERC721("GAN-Node", "GN")
         Ownable(initialOwner)
     {}
+
     event minted(address indexed minter, uint quantity);
     
-
     function _baseURI() internal pure override returns (string memory) {
-        return "https://gpu.net";
+        return "https://ipfs.io/ipfs/";
     }
 
     function safeMint(address to, uint mintQuantity) public onlyOwner {
@@ -37,12 +35,6 @@ contract GANNode is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
         }
         userMinted[to] += mintQuantity;
         emit minted(to, mintQuantity);
-    }
-
-
-    function setServerKey (address newServerKey) public onlyOwner {
-        require(serverPublicAddress != newServerKey && newServerKey != address(0) );
-        serverPublicAddress = newServerKey;
     }
 
     function privateSale(address toSend, uint amount) public onlyOwner {
