@@ -37,12 +37,16 @@ contract GANNode is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
         emit minted(to, mintQuantity);
     }
 
+    function batchMinting(address[] memory toMint, uint[] memory quantity) public onlyOwner {
+        require(toMint.length == quantity.length, "Invalid data");
+        for(uint i=0; i< toMint.length; i++) {
+            safeMint(toMint[i], quantity[i]);
+        }
+    }
+
     function privateSale(address toSend, uint amount) public onlyOwner {
         require((amount + maxTokenId) <= MAX_SUPPLY );
-        for (uint i=1; i<= amount; i++) {
-            maxTokenId+=1;
-            safeMint(toSend, maxTokenId);
-        }
+        safeMint(toSend, amount);
     }
 
     function setURI(string memory newURI) public onlyOwner {
@@ -50,6 +54,24 @@ contract GANNode is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
     }
 
     // The following functions are overrides required by Solidity.
+    function transferFrom(
+        address from,
+        address to,
+        uint256 tokenId
+    ) public  virtual override(ERC721, IERC721) { 
+        require(from == address(0), "Soulbound tokens cannot be transferred.");
+        super.transferFrom(from, to, tokenId);
+    }
+
+    function safeTransferFrom(
+        address from,
+        address to,
+        uint256 tokenId,
+        bytes memory _data
+    ) public virtual override(ERC721, IERC721) {
+        require(from == address(0), "Soulbound tokens cannot be transferred.");
+        super.safeTransferFrom(from, to, tokenId, _data);
+    }
 
     function tokenURI(uint256 tokenId)
         public
@@ -69,4 +91,3 @@ contract GANNode is ERC721, ERC721URIStorage, ERC721Burnable, Ownable {
         return super.supportsInterface(interfaceId);
     }
 }
-
