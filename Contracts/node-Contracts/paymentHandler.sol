@@ -1,60 +1,38 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
-import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
-
 contract paymentHandler is Ownable, ReentrancyGuard {
 
-    using ECDSA for bytes32;
     address public fundsHandler;
-    address public serverPublicAddress;
     uint public totalMinted;
+
+    //mappings
     mapping(uint => uint) public tierLeftover;
     mapping (uint => uint) public tierMaxSupply;
     mapping(uint => uint) public tierToPrice;
     mapping (address => uint) public userMinted;
+    mapping (address => uint) public rewardsEarned;
     mapping(address => mapping(uint=> uint)) public userTierLeftover;
-    // mapping(address => address[]) public referredUsers;
     mapping(address => string) public referralCodes;
     mapping(string => address) public codeToAddress;
-    mapping (address => uint) public rewardsEarned;
     mapping (address => bool) public isInitialized;
-    mapping (bytes32 => bool) public usedNonces;
-
+    
+    //events
     event paymentReceived(address indexed minter, uint256 amount, uint quantity, string refCode);
     event Refer(address indexed referrer, address indexed referee, uint tokenId, uint referralRewards);
 
     constructor(address initialOwner) 
         Ownable(initialOwner) {}
     
-    function isAuthorized(bytes32 messageHash, bytes memory sigHash) internal view returns(bool) {
-        require(!usedNonces[messageHash]);
-        bytes32 ethSignedMessageHash = messageHash; 
-        address resolvedAddress = ethSignedMessageHash.recover(sigHash);
-        return resolvedAddress == serverPublicAddress ;
-    }
-
-    function initializeUser(address userToInit) internal {
-        require(!isInitialized[userToInit]);
-        for(uint i=1; i<=15; i++) {
-            userTierLeftover[userToInit][i] = i;
-            if(i == 5) {
-                userTierLeftover[userToInit][i] = 0;
-            }
-        }
-        isInitialized[userToInit] = !isInitialized[userToInit];
-    }
 
     function mint(uint quantity, string memory refCode) public payable nonReentrant {
-        // require(isAuthorized(messageHash, sigHash), "Unauthorized request");
+        
         if(!isInitialized[msg.sender]){
             initializeUser(msg.sender);
         }
         require(msg.value == calcPrice(quantity, msg.sender, refCode), "Low value sent");
-        // usedNonces[messageHash] = true;
-
         uint finalPayment = msg.value;
 
         if (codeToAddress[refCode] != address(0)) {
@@ -72,9 +50,10 @@ contract paymentHandler is Ownable, ReentrancyGuard {
         deductMint(quantity,msg.sender);
         userMinted[msg.sender] += quantity;
         totalMinted += quantity;
-        emit paymentReceived( msg.sender, msg.value, quantity, refCode );
+        emit paymentReceived( msg.sender, finalPayment, quantity, refCode );
     }
 
+    // Core logic set functions
     function setTiers(uint tier, uint totalAllocated, uint priceTier) external onlyOwner {
         require(tier >0 && tier <= 15 && priceTier >= 0.075 ether);
         tierLeftover[tier] = totalAllocated;
@@ -82,6 +61,63 @@ contract paymentHandler is Ownable, ReentrancyGuard {
         tierToPrice[tier] = priceTier;
     }
 
+    function setReferralCode(string[] memory code, address[] memory wallet) external  onlyOwner {
+        require(code.length == wallet.length);
+        for (uint i = 0; i< code.length; i++) {
+            referralCodes[wallet[i]] = code[i];
+            codeToAddress[code[i]] = wallet[i];
+        }
+    }
+
+    function setFundsHandler(address _newFundsHandler) external onlyOwner{
+        require(_newFundsHandler != address(0), "Invalid address");
+        fundsHandler = _newFundsHandler;
+    }
+    
+    //internal functions
+    function initializeUser(address userToInit) internal {
+        require(!isInitialized[userToInit]);
+        for(uint i=1; i<=15; i++) {
+            userTierLeftover[userToInit][i] = i;
+            if(i == 5) {
+                userTierLeftover[userToInit][i] = 0;
+            }
+        }
+        isInitialized[userToInit] = !isInitialized[userToInit];
+    }
+
+    function deductMint(uint amount, address minter) internal {
+        require(isInitialized[minter]);
+        require(maxMintable(minter) >= amount);
+        uint remAmount = amount;   
+        for (uint256 i = 1; i <= 15; i++) {
+            if(tierLeftover[i] >= userTierLeftover[minter][i] ) {
+                if(remAmount >= userTierLeftover[minter][i]) {
+                    tierLeftover[i] -= userTierLeftover[minter][i];
+                    remAmount -= userTierLeftover[minter][i];
+                    userTierLeftover[minter][i] = 0;
+                }
+                else{
+                    userTierLeftover[minter][i] -= remAmount;
+                    tierLeftover[i] -= remAmount;
+                    remAmount = 0;
+                    break;
+                }
+            }
+            else {
+                userTierLeftover[minter][i] -= tierLeftover[i];
+                
+                remAmount -= tierLeftover[i];
+                tierLeftover[i] = 0;
+            }
+        }
+    }
+
+    
+
+    
+
+    //view functions
     function calcPrice(uint amount, address minter, string memory refCode) public view returns (uint) {
         require(isInitialized[minter]);
         require(maxMintable(minter) >= amount);
@@ -115,33 +151,6 @@ contract paymentHandler is Ownable, ReentrancyGuard {
         return finalPrice;
     }
 
-    function deductMint(uint amount, address minter) internal {
-        require(isInitialized[minter]);
-        require(maxMintable(minter) >= amount);
-        uint remAmount = amount;   
-        for (uint256 i = 1; i <= 15; i++) {
-            if(tierLeftover[i] >= userTierLeftover[minter][i] ) {
-                if(remAmount >= userTierLeftover[minter][i]) {
-                    tierLeftover[i] -= userTierLeftover[minter][i];
-                    remAmount -= userTierLeftover[minter][i];
-                    userTierLeftover[minter][i] = 0;
-                }
-                else{
-                    userTierLeftover[minter][i] -= remAmount;
-                    tierLeftover[i] -= remAmount;
-                    remAmount = 0;
-                    break;
-                }
-            }
-            else {
-                userTierLeftover[minter][i] -= tierLeftover[i];
-                
-                remAmount -= tierLeftover[i];
-                tierLeftover[i] = 0;
-            }
-        }
-    }
-
     function maxMintable(address userToCheck) public view returns(uint) {
         uint maxMint;
         if (!isInitialized[userToCheck]) {
@@ -167,21 +176,4 @@ contract paymentHandler is Ownable, ReentrancyGuard {
         return maxMint;
     }
 
-    function setReferralCode(string[] memory code, address[] memory wallet) external  onlyOwner {
-        require(code.length == wallet.length);
-        for (uint i = 0; i< code.length; i++) {
-            referralCodes[wallet[i]] = code[i];
-            codeToAddress[code[i]] = wallet[i];
-        }
-    }
-
-    function setFundsHandler(address _newFundsHandler) external onlyOwner{
-        require(_newFundsHandler != address(0), "Invalid address");
-        fundsHandler = _newFundsHandler;
-    }
-
-    function setServerAddress (address _newSerPubKey) external onlyOwner {
-        require(_newSerPubKey != address(0));
-        serverPublicAddress = _newSerPubKey;
-    }
 }
