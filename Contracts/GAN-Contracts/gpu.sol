@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0
+
 pragma solidity >=0.8.20;
-import "./IGPU.sol";
+import "./NEWIGPU.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
@@ -10,47 +11,59 @@ interface IERC721 {
 
 contract GPU is IGPU, OwnableUpgradeable, UUPSUpgradeable {
 
-    bool private initialized;
-    uint256 tickSeconds;
-    uint256 bufferTime;
+    bool public initialized;
     uint public machineId;
-    address nftAddress;
+    address public nftAddress;
+    uint256 public tickSeconds;
+    uint256 public gracePeriod;
+    uint256 public  stakingAmount;
+    uint public minDrillTestRange;
+    uint public minAvailability;
+    uint public maxUnavailability;
     string[] public gpuTypes;
     address[] public providersList;
     address[] public queensList; 
+    uint public userId;
 
     //Mappings
-    mapping(address => mapping(uint16 => Job)) consumerJobs;
-    mapping(address => Provider) providers;
-    mapping(address => Consumer) consumers;
-    mapping(address => Queen) queens;
+    mapping(address => mapping(uint16 => Job)) public consumerJobs;
+    mapping(address => Provider) public providers;
+    mapping(address => Consumer) public consumers;
+    mapping(address => Queen) public queens;
     mapping(address => uint) public stakes;
-    mapping(address => address) queenStakings;
-    mapping(address => address) providerStakings;
+    mapping(address => address) public queenStakings;
+    mapping(address => address) public providerStakings;
     mapping(address => address[]) public queenProviders;
     mapping(address => address[]) public drillQueenProviders; 
     mapping(string => uint256) public gpuPrices;
     mapping(uint => Machine) public machineDetails;
     mapping(address => bool) public isStaked;
+    mapping(uint => address) public users;
 
     // Modifiers
     modifier haveNft(address providerAddress){
         IERC721 nftContract = IERC721(nftAddress);
-        require(nftContract.balanceOf(providerAddress) > 0, "Does not have nft");
+        require(nftContract.balanceOf(providerAddress) > 0, "Do not have NFT");
         _;
     }
 
-    modifier isStakedAddress(address StakerAddress){
-        require(!isStaked[StakerAddress],"Staker already present");
+    modifier isStakedAddress(address StakingAddress){
+        require(!isStaked[StakingAddress],"Staking address already present");
         _;
     }
 
     // Events
+    event AmountWithdrawal(address user, uint amount);
+    event Initialized(address owner, uint256 tickSeconds, uint machineId, address indexed nftAddress, uint256 stakingAmount);
+    event InitializedDrillTestValues(uint minDrillTestRange, uint minProviderAvailability, uint maxProviderUnavailability, uint256 gracePeriod);
+    event AddedGpuType(string gpuType, uint priceInWei);
+    event UpdatedGpuPrice(uint gpuIndex, uint256 updatedPriceInWei);
+    event QueenAdded(address indexed sender, address indexed queenStakingAddress, string publicKey, string userName, uint256 stakedAmount);
+    event ProviderAdded(address indexed providerAddress, uint256 machineId, uint16 gpuType, string ipAddress, address providerStakingAddress, address queenValidationAddress);
+    event ConsumerAdded(address consumerAddress, string userName, string organisation);
     event JobCreated(address indexed consumerAddress, address indexed providerAddress, address queenValidationAddress, uint16 jobId, uint16 gpuType, uint256 gpuHoursInSeconds, uint256 price);
     event JobUpdated(address indexed consumerAddress, address indexed providerAddress, address indexed queenAddress, uint16 jobId, JobStatus status);
     event JobCompleted(address indexed consumerAddress, address indexed providerAddress, address indexed currentQueenAddress, uint16 jobID);
-    event QueenAdded(address indexed sender, address indexed queenStakingAddress, string publicKey, string userName, uint256 stakedAmount);
-    event ProviderAdded(address indexed providerAddress, uint256 machineId, uint16 gpuType, string ipAddress, address providerStakingAddress, address queenValidationAddress);
     event ProviderStatusUpdated(address indexed providerAddress, uint16 lastDrillResult);
     event DrillRequested( address indexed providerAddress);
     event QueenReassign(address indexed consumerAddress, address indexed providerAddress, address indexed queenAddress, uint16 jobId);
@@ -59,40 +72,48 @@ contract GPU is IGPU, OwnableUpgradeable, UUPSUpgradeable {
     //Functions
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
-
-   function initialize(uint256 _tick, uint _id, address _nftAddress, uint256 _bufferTime) public initializer {
+    function initialize(uint256 tick, uint machineID, address NFTAddress, uint256 stakeAmount, uint minDrillTestValue, uint minProviderAvailability, uint maxProviderUnavailability, uint256 latencyPeriod, uint userID) public initializer {
         require(!initialized, "Contract is already initialized");
         __Ownable_init(msg.sender);
         __UUPSUpgradeable_init();
-        tickSeconds = _tick;
-        machineId = _id;
+        tickSeconds = tick;
+        machineId = machineID;
+        nftAddress = NFTAddress; 
+        stakingAmount = stakeAmount;   
+        minDrillTestRange = minDrillTestValue;
+        minAvailability = minProviderAvailability;
+        maxUnavailability = maxProviderUnavailability;   
+        gracePeriod = latencyPeriod; 
+        userId = userID;
         initialized = true;
-        nftAddress = _nftAddress;       
-        bufferTime = _bufferTime; 
+
+        emit Initialized(msg.sender, tickSeconds, machineId, nftAddress, stakingAmount);
+        emit InitializedDrillTestValues(minDrillTestRange, minAvailability, maxUnavailability, gracePeriod);
     }
 
     function withdraw(uint amount) public onlyOwner {
         payable(msg.sender).transfer(amount);
+        emit AmountWithdrawal(msg.sender, amount);
     }
-
-    
   
     //SETTER Functions
     function addGpuType(string calldata gpuType, uint256 priceInWei) public onlyOwner {
         gpuTypes.push(gpuType); 
-        gpuPrices[gpuType] = priceInWei; 
+        gpuPrices[gpuType] = priceInWei;
+        emit AddedGpuType(gpuType, priceInWei);
     }
 
 
     function updateGpuPrice(uint16 gpuIndex, uint256 updatedPriceInWei) public onlyOwner{
         gpuPrices[gpuTypes[gpuIndex]] = updatedPriceInWei;
+        emit UpdatedGpuPrice(gpuIndex, updatedPriceInWei); 
     }
 
     function addQueen(address queenStakingAddress, string calldata publicKey, string calldata userName) public haveNft(queenStakingAddress) isStakedAddress(queenStakingAddress)payable {
         require(!queens[msg.sender].exists, "Queen already present");
-        require(msg.value == 100 ether, "You must stake some amount of GPU");
-        require(msg.sender != address(0), "You must enter queen health check");
-        require(bytes(publicKey).length > 0, "You must enter public key");
+        require(msg.value == stakingAmount, "Stake Gpoints");
+        require(bytes(userName).length > 0, "User name is empty");
+        require(bytes(publicKey).length > 0, "Public key is empty");
         stakes[queenStakingAddress] += msg.value;
         isStaked[queenStakingAddress] = true;
         queens[msg.sender] = Queen({
@@ -103,6 +124,10 @@ contract GPU is IGPU, OwnableUpgradeable, UUPSUpgradeable {
         });
         queensList.push(msg.sender);
         queenStakings[msg.sender] = queenStakingAddress;
+        users[userId] = msg.sender;
+        userId++;
+        users[userId] = queenStakingAddress;
+        userId++;
 
         emit QueenAdded(msg.sender, queenStakingAddress, publicKey, userName, msg.value);
 
@@ -115,19 +140,19 @@ contract GPU is IGPU, OwnableUpgradeable, UUPSUpgradeable {
         address providerStakingAddress
     ) external haveNft(providerStakingAddress) isStakedAddress(providerStakingAddress) payable {
         require(!providers[msg.sender].exists, "Provider already present");
-        require(msg.value == 100 ether, "You must stake some amount of GPU");
+        require(msg.value == stakingAmount, "Stake Gpoints");
         require(gpuType < gpuTypes.length, "Enter valid GPU type");
-        require(bytes(providerDetails.gpuName).length > 0, "GPU name cannot be empty");
-        require(providerDetails.gpuQuantity > 0, "GPU quantity must be greater than 0");
+        require(bytes(providerDetails.gpuName).length > 0, "GPU name is empty");
+        require(providerDetails.gpuQuantity > 0, "GPU quantity not found");
         require(providerDetails.gpuMemory > 0, "GPU memory required");
-        require(bytes(providerDetails.connectionType).length > 0, "GPU name cannot be empty");
-        require(bytes(providerDetails.cpuName).length > 0, "CPU name cannot be empty");
+        require(bytes(providerDetails.connectionType).length > 0, "Connection type not found");
+        require(bytes(providerDetails.cpuName).length > 0, "CPU name cnot found");
         require(providerDetails.cpuCoreCount > 0, "CPU core count required");
-        require(providerDetails.uploadBandWidth > 0 && providerDetails.downloadBandWidth > 0, "Upload and download bandwidth must be present");
-        require(bytes(providerDetails.storageType).length > 0, "GPU storage cannot be empty");
-        require(providerDetails.storageAvailable > 0, "Storage not available");
-        require(providerDetails.portsOpen.length > 0, "Open ports not given");
-        require(bytes(providerDetails.region).length > 0, "Region cannot be empty");
+        require(providerDetails.uploadBandWidth > 0 && providerDetails.downloadBandWidth > 0, "Upload and download bandwidth not found");
+        require(bytes(providerDetails.storageType).length > 0, "GPU storage not found");
+        require(providerDetails.storageAvailable > 0, "Available storage value not found");
+        require(providerDetails.portsOpen.length > 0, "Ports not found");
+        require(bytes(providerDetails.region).length > 0, "Region not found");
         
         stakes[providerStakingAddress] += msg.value;
         isStaked[providerStakingAddress] = true;
@@ -151,6 +176,11 @@ contract GPU is IGPU, OwnableUpgradeable, UUPSUpgradeable {
         providerStakings[msg.sender] = providerStakingAddress;
         drillQueenProviders[queenValidationAddress].push(msg.sender); 
 
+        users[userId] = msg.sender;
+        userId++;
+        users[userId] = providerStakingAddress;
+        userId++;
+
         emit ProviderAdded( msg.sender, machineId, gpuType, ipAddress, providerStakingAddress, queenValidationAddress);
     }
 
@@ -170,7 +200,7 @@ contract GPU is IGPU, OwnableUpgradeable, UUPSUpgradeable {
     }
 
     function providerDrillRequest() external {
-        require(providers[msg.sender].exists, "Provider should be already present");
+        require(providers[msg.sender].exists, "Provider is not present");
         if(block.timestamp - providers[msg.sender].lastDrillTime > tickSeconds){
         uint randomIndex = uint(keccak256(abi.encodePacked(block.timestamp, block.number, msg.sender)));
         address queenValidationAddress = queensList[randomIndex % queensList.length];
@@ -180,29 +210,33 @@ contract GPU is IGPU, OwnableUpgradeable, UUPSUpgradeable {
         emit DrillRequested(msg.sender);
     }
 
-    function addConsumer(address consumerAddress, string calldata publicKey ,string calldata userName,string calldata organisation)  external {
+    function addConsumer(address consumerAddress ,string calldata userName,string calldata organisation)  external {
         require(!consumers[consumerAddress].exists, "Consumer already present");
-        require(bytes(publicKey).length > 0, "You must enter public key");
         consumers[consumerAddress] = Consumer({
-            publicKey : publicKey,  
             userName : userName, 
             organisation : organisation,
             nextJobId : 1 , 
             jobs :  new uint16[](0) ,
             exists : true
             });
+        
+        users[userId] = consumerAddress;
+        userId++;
+        emit ConsumerAdded(consumerAddress, userName, organisation);
     }
    
     function createJob(
         address providerAddress,
         uint16 gpuType,
-        uint256 gpuHours ) public payable{
+        uint256 gpuHours,
+        string calldata sshPublicKey ) public payable{
         uint256 cost = calculateCost(gpuType,gpuHours);
         require(consumers[msg.sender].exists, "Consumer must exist");
-        require(msg.value == cost, "You must deposit some amount of GPU");
+        require(msg.value == cost, "Deposit some GPoints");
+        require(bytes(sshPublicKey).length > 0, "SSH public key not found");
         require(providers[providerAddress].status == ProviderStatus.AVAILABLE, "Provider not available");
-        require(providers[providerAddress].gpuType == gpuType, "Provider does not have the required GPU");
-        require(queensList.length > 0, "No queens in the list");
+        require(providers[providerAddress].gpuType == gpuType, "Provider don't have this GPU");
+        require(queensList.length > 0, "Queen not present");
         stakes[msg.sender] += msg.value;
         uint randomIndex = uint(keccak256(abi.encodePacked(block.timestamp, block.number, msg.sender)));
         address queenValidationAddress = queensList[randomIndex % queensList.length];
@@ -220,6 +254,7 @@ contract GPU is IGPU, OwnableUpgradeable, UUPSUpgradeable {
             completedTicks : 0,
             completedHours : 0,
             price : msg.value,
+            sshPublicKey: sshPublicKey,
             status : JobStatus.VERIFYING
             });
         providers[providerAddress].currentConsumer = msg.sender;
@@ -233,8 +268,8 @@ contract GPU is IGPU, OwnableUpgradeable, UUPSUpgradeable {
         emit JobCreated( msg.sender, providerAddress, queenValidationAddress, jobId, gpuType, gpuHoursInSeconds, msg.value);
     }
 
-    function drillTest(uint16 value) pure  internal returns(bool){
-        uint16 minRange = 80;
+    function drillTest(uint value) view internal returns(bool){
+        uint minRange = minDrillTestRange;
         if (value > minRange)
         {
             return true;
@@ -251,7 +286,7 @@ contract GPU is IGPU, OwnableUpgradeable, UUPSUpgradeable {
         require(msg.sender == providers[providerAddress].currentQueen, "Only assigned queen can call");
         address consumerAddress = providers[providerAddress].currentConsumer;
         uint16 jobId = providers[providerAddress].currentJobId;
-        require(consumerJobs[consumerAddress][jobId].status ==  JobStatus.VERIFYING, "Can only call when job is verifying");
+        require(consumerJobs[consumerAddress][jobId].status ==  JobStatus.VERIFYING, "Call only when job is verifying");
         
         if(drillTest(value)){
             providers[providerAddress].status = ProviderStatus.PROCESSING;
@@ -285,7 +320,8 @@ contract GPU is IGPU, OwnableUpgradeable, UUPSUpgradeable {
             consumerJobs[consumerAddress][jobId].completedTicks += 2;
             consumerJobs[consumerAddress][jobId].completedHours += 2 * tickSeconds;
             consumerJobs[consumerAddress][jobId].lastChecked = block.timestamp;
-        } else {
+        }
+        else {
             consumerJobs[consumerAddress][jobId].completedTicks += 1;
             consumerJobs[consumerAddress][jobId].completedHours += tickSeconds;
             consumerJobs[consumerAddress][jobId].lastChecked = block.timestamp;
@@ -298,13 +334,16 @@ contract GPU is IGPU, OwnableUpgradeable, UUPSUpgradeable {
             providers[msg.sender].currentQueen = address(0);
             providers[msg.sender].currentJobId = 0;
           
-         emit JobCompleted(consumerAddress, msg.sender, providers[msg.sender].currentQueen, jobId);
+            emit JobCompleted(consumerAddress, msg.sender, providers[msg.sender].currentQueen, jobId);
           
         } else {
             queenProviders[newQueen].push(msg.sender);
+            emit JobUpdated(consumerAddress, msg.sender, newQueen, jobId, consumerJobs[consumerAddress][jobId].status); 
+            emit QueenReassign(consumerAddress, msg.sender, providers[msg.sender].currentQueen, jobId);
         }
+        
     }
-    emit QueenReassign(consumerAddress, msg.sender, providers[msg.sender].currentQueen, jobId);
+    
     }
 
     function updateAssignQueen() view internal returns (address) {
@@ -326,9 +365,9 @@ contract GPU is IGPU, OwnableUpgradeable, UUPSUpgradeable {
         address consumerAddress = providers[data.providerAddress].currentConsumer;
         uint16 jobId = providers[data.providerAddress].currentJobId;
         
-        require(consumerJobs[consumerAddress][jobId].status ==  JobStatus.RUNNING, "Can only call when job is running");
+        require(consumerJobs[consumerAddress][jobId].status ==  JobStatus.RUNNING, "Call only when job is running");
         
-        if (block.timestamp - consumerJobs[consumerAddress][jobId].lastChecked >= (tickSeconds - bufferTime)) {
+        if (block.timestamp - consumerJobs[consumerAddress][jobId].lastChecked >= (tickSeconds - gracePeriod)) {
 
             if (healthCheckTest(data.availabilityData)) {
                 consumerJobs[consumerAddress][jobId].completedTicks += 1;
@@ -343,7 +382,7 @@ contract GPU is IGPU, OwnableUpgradeable, UUPSUpgradeable {
                 providers[data.providerAddress].currentQueen = address(0);
                 providers[data.providerAddress].currentJobId = 0;
             
-            emit JobCompleted(consumerAddress, data.providerAddress, providers[data.providerAddress].currentQueen, jobId);
+                emit JobCompleted(consumerAddress, data.providerAddress, providers[data.providerAddress].currentQueen, jobId);
             }
 
             else{
@@ -352,13 +391,47 @@ contract GPU is IGPU, OwnableUpgradeable, UUPSUpgradeable {
         }
     }
 
-    function healthCheckTest(uint16[] calldata value) internal pure returns(bool){
-        uint16 minAvailability = 54;
-        uint16 maxUnavailability = 5;
+    function healthCheckTest(uint16[] calldata value) internal view returns(bool){
         if (value[0] > minAvailability && value[1] < maxUnavailability) {
             return true;
         }
         return false;
+    }
+
+    function setTickSeconds(uint256 newTickSeconds) public onlyOwner{
+        tickSeconds = newTickSeconds;
+    }
+
+    function setMachineId(uint newMachineId) public onlyOwner{
+        machineId = newMachineId;
+    }
+
+    function setNftAddress(address newNftAddress) public onlyOwner{
+        nftAddress = newNftAddress;
+    }
+
+    function setStakeAmount(uint256 newStakingAmount) public onlyOwner{
+        stakingAmount = newStakingAmount;
+    }
+
+    function setMinDrillTestValue(uint newMinDrillTestRange) public onlyOwner{
+        minDrillTestRange = newMinDrillTestRange;
+    }
+
+    function setMinProviderAvailability(uint newMinAvailability) public onlyOwner{
+        minAvailability = newMinAvailability;
+    }
+
+    function setMaxProviderUnavailability(uint newMaxUnavailability) public onlyOwner{
+        maxUnavailability = newMaxUnavailability;
+    }
+
+    function setLatencyPeriod(uint256 newGracePeriod) public onlyOwner{
+        gracePeriod = newGracePeriod;
+    }
+
+    function setUserID(uint newUserId) public onlyOwner{
+        userId = newUserId;
     }
 
     //GETTER Functions
@@ -372,27 +445,12 @@ contract GPU is IGPU, OwnableUpgradeable, UUPSUpgradeable {
         return providers[providerAddress].status;
     }
 
-    function getJobStatus(address consumerAddress, uint16 jobId) public view returns(JobStatus){
-        return consumerJobs[consumerAddress][jobId].status;
-    }
-
-    function getConsumerActiveJob() public view returns(uint16[] memory){
+    function getConsumerJobs() public view returns(uint16[] memory){
         return consumers[msg.sender].jobs;
     }
 
     function getProviders() public view returns(address[] memory) {
         return providersList;
-    }
-    function getProvider(address providerAddress) public view returns(Provider memory){
-        return providers[providerAddress];
-    }
-
-    function getConsumer(address consumerAddress) public view returns(Consumer memory){
-        return consumers[consumerAddress];
-    }
-
-    function getQueen(address queenAddress) public view returns(Queen memory){
-        return queens[queenAddress];
     }
 
     function getGpuTypes() public view returns(string[] memory){
@@ -407,17 +465,7 @@ contract GPU is IGPU, OwnableUpgradeable, UUPSUpgradeable {
         return queenProviders[msg.sender];
     } 
 
-    function getConsumerJobInfo(address consumerAddress, uint16 jobId) external view returns(Job memory){
-        return consumerJobs[consumerAddress][jobId];
-    }
-
-
-    function machineInfo(uint id) public view  returns(Machine memory) {
-        return machineDetails[id];
-    }
-
-     function getDrillProvider() public view returns(address[] memory){
+    function getDrillProvider() public view returns(address[] memory){
         return drillQueenProviders[msg.sender];
-    }
-    
+    }    
 }

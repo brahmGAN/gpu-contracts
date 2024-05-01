@@ -9,6 +9,13 @@ interface IGPU {
     
    
     // Structs
+    struct Queen {
+        string publicKey;
+        string userName;
+        QueenStatus status;
+        bool exists;
+    }
+
     struct Provider {
         uint16 gpuType;
         string ipAddress;
@@ -25,16 +32,8 @@ interface IGPU {
     struct Consumer {
         string userName;
         string organisation;
-        string publicKey;
         uint16 nextJobId;
         uint16[] jobs;
-        bool exists;
-    }
-    
-    struct Queen {
-        string publicKey;
-        string userName;
-        QueenStatus status;
         bool exists;
     }
     
@@ -49,6 +48,7 @@ interface IGPU {
         uint16 completedTicks;
         uint256 completedHours;
         uint price;
+        string sshPublicKey;
         JobStatus status;
     }
     
@@ -56,6 +56,7 @@ interface IGPU {
         address providerAddress;
         uint16[] availabilityData;
     }
+
     struct Machine {
         string gpuName;
         uint16 gpuQuantity;
@@ -70,5 +71,4 @@ interface IGPU {
         uint256[] portsOpen;
         string region;
     }
-
 }
